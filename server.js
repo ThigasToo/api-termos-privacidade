@@ -51,7 +51,7 @@ app.get('/analisar', async (req, res) => {
             // 👇 3. Se não achou, salvamos que foi só a IA!
             fonteUtilizada = "Exclusiva por Inteligência Artificial (Sem registros no ToS;DR)";
 
-            dadosParaIA = `Não há dados no ToS;DR. Faça uma análise baseada no seu conhecimento sobre o site ${site}.`;
+            dadosParaIA = `Não há dados no ToS;DR. Faça uma análise baseada no seu conhecimento sobre as políticas de privacidade e termos de serviço do site ${site}.`;
         }
 
         console.log(`⏳ Consultando o GPT-4o-mini...`);
