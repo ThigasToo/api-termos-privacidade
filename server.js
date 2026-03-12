@@ -66,8 +66,8 @@ app.get('/analisar', async (req, res) => {
                     Sua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido.
                     
                     Regras de análise:
-                    1. "score": Analise os dados brutos e calcule VOCÊ MESMO uma nota rigorosa ('A', 'B', 'C', 'D' ou '?'). Ignore a nota original do ToS;DR, confie na sua própria análise de gravidade dos dados encontrados.
-                    2. "alertas": Uma lista contendo exatamente 3 pontos críticos em Português do Brasil. Seja objetivo! (ex: "Compartilha seus dados com parceiros de marketing").`
+                    1. "score": Analise os dados brutos e calcule VOCÊ MESMO uma nota rigorosa ('A', 'B', 'C', 'D' ou '?'). Use de base a nota do ToS;DR, mas também confie na sua própria análise de gravidade dos dados encontrados.
+                    2. "alertas": Uma lista contendo exatamente 3 a 6 pontos críticos em Português do Brasil. Seja objetivo! (ex: "Compartilha seus dados com parceiros de marketing").`
                 },
                 {
                     role: "user",
