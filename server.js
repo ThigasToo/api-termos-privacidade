@@ -18,7 +18,7 @@ app.use(express.json());
 app.use(rateLimit({
     windowMs: 60 * 1000, // 1 minuto
     max: 30,
-    message: { error: "Muitas requisições. Tente novamente em 1 minuto." }
+    message: { error: "Too many requests. Please try again in 1 minute." }
 }));
 
 // 🔑 OpenAI
@@ -45,7 +45,7 @@ app.get('/analisar', async (req, res) => {
     // 🛑 Validação de entrada
     if (!site || typeof site !== "string") {
         return res.status(400).json({
-            error: "Parâmetro 'site' é obrigatório"
+            error: "Parameter 'site' is required."
         });
     }
 
@@ -97,15 +97,14 @@ app.get('/analisar', async (req, res) => {
 
             console.log(`✅ ToS;DR encontrado: ${servico.name} (${notaExclusivaTosdr})`);
 
-            fonteUtilizada = "Base de dados ToS;DR + Inteligência Artificial";
-            dadosParaIA = `O site ${site} possui a Nota ${notaExclusivaTosdr} no ToS;DR.
-            Dados brutos: ${JSON.stringify(servico)}`;
+            fonteUtilizada = "ToS;DR Database + Artificial Intelligence";
+            dadosParaIA = `The site ${site} has a Score of ${notaExclusivaTosdr} on ToS;DR. Raw data: ${JSON.stringify(servico)}`;
 
         } else {
             console.log(`⚠️ Sem dados no ToS;DR`);
 
-            fonteUtilizada = "Exclusiva por Inteligência Artificial";
-            dadosParaIA = `Não há dados no ToS;DR para o site ${site}. Analise com base no seu conhecimento sobre os termos de privacidade dessa empresa.`;
+            fonteUtilizada = "Exclusive by Artificial Intelligence";
+            dadosParaIA = `There is no data on ToS;DR for the site ${site}. Analyze based on your knowledge of this company's privacy terms.`;
         }
 
         console.log(`⏳ Consultando IA...`);
@@ -116,17 +115,17 @@ app.get('/analisar', async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `Você é um advogado especialista em cibersegurança e privacidade de dados.
-Sua missão é gerar um resumo simples e direto para o usuário final.
-Sua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido.
+                    content: `You are a lawyer specializing in cybersecurity and data privacy.
+Your mission is to generate a simple and direct summary for the end user.
+Your response MUST strictly be a valid JSON object.
 
-Regras de análise:
-1. "score": Retorne EXATAMENTE a nota do ToS;DR informada na base. Não calcule ou invente uma nova nota de forma alguma. Se a nota não for fornecida ou não existir, retorne "?".
-2. "alertas": Uma lista contendo exatamente 3 a 6 pontos críticos em Português do Brasil. Seja objetivo! (ex: "Compartilha seus dados com parceiros de marketing").`
+Analysis rules:
+1. "score": Return EXACTLY the ToS;DR rating provided in the database. Do not calculate or invent a new score. If no score is provided, return "?".
+2. "alertas": A list containing exactly 3 to 6 critical points in ENGLISH. Be objective! (e.g., "Shares your data with marketing partners").`
                 },
                 {
                     role: "user",
-                    content: `Base de dados para análise:\n${dadosParaIA}\n\nRetorne estritamente o JSON: {"score": "Nota", "alertas": ["Alerta 1", "Alerta 2", "Alerta 3"]}`
+                    content: `Database for analysis:\n${dadosParaIA}\n\nStrictly return the JSON: {"score": "Score", "alertas": ["Alert 1", "Alert 2", "Alert 3"]}`
                 }
             ]
         });
@@ -161,10 +160,10 @@ Regras de análise:
         res.status(500).json({
             score: "?",
             alertas: [
-                "Erro interno ao analisar o site.",
-                "Tente novamente em instantes."
+                "Internal error while analyzing the site.",
+                "Please try again in a few moments."
             ],
-            fonte: "Erro no Servidor",
+            fonte: "Server Error",
             tempoResposta: `${Date.now() - inicio}ms`
         });
     }
