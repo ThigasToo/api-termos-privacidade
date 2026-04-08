@@ -2,176 +2,104 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const { OpenAI } = require('openai');
 
 const app = express();
-
-// 🔐 CORS (ajuste o origin depois com seu ID da extensão/frontend)
-app.use(cors({
-    origin: "*"
-}));
-
+app.use(cors());
 app.use(express.json());
 
-// 🚫 Rate limit (proteção básica)
-app.use(rateLimit({
-    windowMs: 60 * 1000, // 1 minuto
-    max: 30,
-    message: { error: "Too many requests. Please try again in 1 minute." }
-}));
-
-// 🔑 OpenAI
+// 1. CONFIGURAÇÃO DA OPENAI
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
-// ⚡ Cache com TTL
+// 2. O NOSSO CACHE
 const cachePrivacidade = {};
-const CACHE_TTL = 1000 * 60 * 60; // 1 hora
-
-// 🔍 Função para limpar domínio
-function limparDominio(site) {
-    return site
-        .replace(/^https?:\/\//, "")
-        .split("/")[0]
-        .toLowerCase();
-}
 
 app.get('/analisar', async (req, res) => {
-    const inicio = Date.now();
-    let { site } = req.query;
+    const site = req.query.site; 
+    console.log(`\n🔍 Extensão pediu análise do site: ${site}`);
 
-    // 🛑 Validação de entrada
-    if (!site || typeof site !== "string") {
-        return res.status(400).json({
-            error: "Parameter 'site' is required."
-        });
-    }
-
-    site = limparDominio(site);
-    console.log(`\n🔍 Analisando site: ${site}`);
-
-    // ⚡ Verifica cache com TTL
-    const cache = cachePrivacidade[site];
-    if (cache && (Date.now() - cache.timestamp < CACHE_TTL)) {
-        console.log(`⚡ [CACHE HIT] ${site}`);
-        return res.status(200).json({
-            ...cache.data,
-            tempoResposta: `${Date.now() - inicio}ms`
-        });
+    if (cachePrivacidade[site]) {
+        console.log(`⚡ [CACHE HIT] Retornando do Cache: ${site}`);
+        return res.status(200).json(cachePrivacidade[site]);
     }
 
     try {
         let dadosParaIA = "";
-        let fonteUtilizada = "";
-        let notaExclusivaTosdr = "?"; // A nota padrão é '?' se não achar nada
+        let fonteUtilizada = ""; // 👇 1. Criamos a variável para guardar a fonte
 
-        console.log(`🌐 Buscando no ToS;DR...`);
+        console.log(`🌐 Buscando no banco de dados do ToS;DR...`);
+        const tosdrResponse = await fetch(`https://api.tosdr.org/search/v4/?query=${site}`);
+        const tosdrData = await tosdrResponse.json();
 
-        // ⏱️ Timeout no fetch (evita que o servidor trave se o ToS;DR demorar)
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-
-        let tosdrData = null;
-        try {
-            const tosdrResponse = await fetch(`https://api.tosdr.org/search/v4/?query=${site}`, {
-                signal: controller.signal
-            });
-            tosdrData = await tosdrResponse.json();
-        } catch (fetchErro) {
-            console.log(`⚠️ Erro/Timeout na API do ToS;DR. Seguindo sem dados prévios.`);
-        } finally {
-            clearTimeout(timeout);
-        }
-
-        // Verifica se vieram dados válidos do ToS;DR
-        if (
-            tosdrData &&
-            tosdrData.parameters &&
-            tosdrData.parameters.services &&
-            tosdrData.parameters.services.length > 0
-        ) {
+        if (tosdrData.parameters && tosdrData.parameters.services && tosdrData.parameters.services.length > 0) {
             const servico = tosdrData.parameters.services[0];
-            notaExclusivaTosdr = servico.rating && servico.rating.letter ? servico.rating.letter : '?';
+            const notaTosdr = servico.rating ? servico.rating.letter : 'Desconhecida';
+            
+            console.log(`✅ Achou no ToS;DR! Serviço pescado: "${servico.name}" | Nota deles: ${notaTosdr}`);
+            
+            // 👇 2. Se achou no banco, salvamos essa fonte!
+            fonteUtilizada = "Base de dados ToS;DR + Inteligência Artificial";
 
-            console.log(`✅ ToS;DR encontrado: ${servico.name} (${notaExclusivaTosdr})`);
-
-            fonteUtilizada = "ToS;DR Database + Artificial Intelligence";
-            dadosParaIA = `The site ${site} has a Score of ${notaExclusivaTosdr} on ToS;DR. Raw data: ${JSON.stringify(servico)}`;
-
+            dadosParaIA = `O site ${site} possui a Nota ${notaTosdr} no ToS;DR.
+            Aqui estão os dados brutos encontrados: ${JSON.stringify(servico)}.
+            Traduza para português, ignore informações irrelevantes e extraia os piores pontos para o usuário.`;
         } else {
-            console.log(`⚠️ Sem dados no ToS;DR`);
+            console.log(`⚠️ Site não está no ToS;DR. A IA fará a análise com base no seu conhecimento prévio.`);
+            
+            // 👇 3. Se não achou, salvamos que foi só a IA!
+            fonteUtilizada = "Exclusiva por Inteligência Artificial (Sem registros no ToS;DR)";
 
-            fonteUtilizada = "Exclusive by Artificial Intelligence";
-            dadosParaIA = `There is no data on ToS;DR for the site ${site}. Analyze based on your knowledge of this company's privacy terms.`;
+            dadosParaIA = `Não há dados no ToS;DR. Faça uma análise baseada no seu conhecimento sobre as políticas de privacidade e termos de serviço do site ${site}.`;
         }
 
-        console.log(`⏳ Consultando IA...`);
-
+        console.log(`⏳ Consultando o GPT-4o-mini...`);
         const resposta = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            response_format: { type: "json_object" },
+            response_format: { type: "json_object" }, 
             messages: [
                 {
                     role: "system",
-                    content: `You are a lawyer specializing in cybersecurity and data privacy.
-Your mission is to generate a simple and direct summary for the end user.
-Your response MUST strictly be a valid JSON object.
-
-Analysis rules:
-1. "score": Return EXACTLY the ToS;DR rating provided in the database. Do not calculate or invent a new score. If no score is provided, return "?".
-2. "alertas": A list containing exactly 3 to 6 critical points in ENGLISH. Be objective! (e.g., "Shares your data with marketing partners").`
+                    content: `Você é um advogado especialista em cibersegurança e privacidade de dados.
+                    Sua missão é gerar um resumo simples e direto para o usuário final.
+                    Sua resposta DEVE ser OBRIGATORIAMENTE um objeto JSON válido.
+                    
+                    Regras de análise:
+                    1. "score": Analise os dados brutos e calcule VOCÊ MESMO uma nota rigorosa ('A', 'B', 'C', 'D' ou '?'). Use de base a nota do ToS;DR, mas também confie na sua própria análise de gravidade dos dados encontrados.
+                    2. "alertas": Uma lista contendo exatamente 3 a 6 pontos críticos em Português do Brasil. Seja objetivo! (ex: "Compartilha seus dados com parceiros de marketing").`
                 },
                 {
                     role: "user",
-                    content: `Database for analysis:\n${dadosParaIA}\n\nStrictly return the JSON: {"score": "Score", "alertas": ["Alert 1", "Alert 2", "Alert 3"]}`
+                    content: `Base de dados para análise:\n${dadosParaIA}\n\nRetorne estritamente o JSON: {"score": "Nota", "alertas": ["Alerta 1", "Alerta 2", "Alerta 3"]}`
                 }
             ]
         });
 
-        // 🧠 Proteção contra JSON inválido da IA
-        let dadosFormatados;
-        try {
-            dadosFormatados = JSON.parse(resposta.choices[0].message.content);
-        } catch {
-            throw new Error("Resposta inválida da IA");
-        }
+        const dadosFormatados = JSON.parse(resposta.choices[0].message.content);
 
-        // 🔒 Trava de Segurança Final: Força o score real caso a IA tenha alucinado
-        dadosFormatados.score = notaExclusivaTosdr; 
-        
+        // 👇 4. Injetamos a fonte no objeto que vai para a extensão!
         dadosFormatados.fonte = fonteUtilizada;
-        dadosFormatados.tempoResposta = `${Date.now() - inicio}ms`;
 
-        // 💾 Salva no cache
-        cachePrivacidade[site] = {
-            data: dadosFormatados,
-            timestamp: Date.now()
-        };
-
-        console.log(`💾 Cache salvo | Score Final: ${dadosFormatados.score}`);
-
+        cachePrivacidade[site] = dadosFormatados;
+        console.log(`💾 [SALVO NO CACHE] Score: ${dadosFormatados.score}. Pronto para os próximos acessos!`);
+        
         res.status(200).json(dadosFormatados);
 
     } catch (erro) {
-        console.error("❌ Erro:", erro.message);
-
-        res.status(500).json({
+        console.error("❌ Erro no backend:", erro);
+        res.status(200).json({
             score: "?",
             alertas: [
-                "Internal error while analyzing the site.",
-                "Please try again in a few moments."
+                "Houve uma falha ao consultar nossas bases de dados.",
+                "Por favor, tente fechar e abrir este aviso novamente."
             ],
-            fonte: "Server Error",
-            tempoResposta: `${Date.now() - inicio}ms`
+            fonte: "Erro de Conexão" // Adicionamos a fonte pro caso de erro também
         });
     }
 });
 
-// 🚀 Inicialização
-const PORTA = process.env.PORT || 3000;
-
+const PORTA = 3000;
 app.listen(PORTA, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORTA}`);
+    console.log(`🚀 Servidor Turbinado (Cache + ToS;DR + OpenAI) rodando na porta ${PORTA}!`);
 });
